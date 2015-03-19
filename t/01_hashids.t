@@ -5,6 +5,7 @@ use warnings;
 use Test::More;
 use Test::Exception;
 use Hashids;
+use Math::BigInt;
 
 plan tests => 11;
 
@@ -85,30 +86,30 @@ subtest 'basics' => sub {
 subtest 'internal functions' => sub {
     plan tests => 9;
 
-    is( Hashids->_consistentShuffle( '123', 'salt' ), '231', 'shuffle 1' );
-    is( Hashids->_consistentShuffle( 'abcdefghij', 'salt' ),
+    is( Hashids::_consistentShuffle( '123', 'salt' ), '231', 'shuffle 1' );
+    is( Hashids::_consistentShuffle( 'abcdefghij', 'salt' ),
         'iajecbhdgf', 'shuffle 2' );
 
-    is( Hashids->_consistentShuffle( [ '1', '2', '3' ], 'salt' ),
+    is( Hashids::_consistentShuffle( [ '1', '2', '3' ], 'salt' ),
         '231', 'shuffle alphabet list 1' );
-    is( Hashids->_consistentShuffle( [ 'a' .. 'j' ], 'salt' ),
+    is( Hashids::_consistentShuffle( [ 'a' .. 'j' ], 'salt' ),
         'iajecbhdgf', 'shuffle alphabet list 2' );
 
-    my @res = Hashids->_consistentShuffle( '123', 'salt' );
+    my @res = Hashids::_consistentShuffle( '123', 'salt' );
     is_deeply( \@res, [qw( 2 3 1 )], 'shuffle returns a list' );
 
-    is( Hashids->_consistentShuffle( [ 'a' .. 'j' ], [qw( s a l t )] ),
+    is( Hashids::_consistentShuffle( [ 'a' .. 'j' ], [qw( s a l t )] ),
         'iajecbhdgf', 'shuffle with salt as list' );
 
-    is( Hashids->_hash( 123, 'abcdefghij' ), 'bcd', 'internal hash' );
-    is( Hashids->_unhash( 'bcd', 'abcdefghij' ), 123, 'internal unhash' );
+    is( Hashids::_hash( 123, 'abcdefghij' ), 'bcd', 'internal hash' );
+    is( Hashids::_unhash( 'bcd', 'abcdefghij' ), 123, 'internal unhash' );
 
     subtest '_hash/_unhash with list' => sub {
         plan tests => 2;
 
         my @alphabet = qw(a b c d e f g h i j);
-        is( Hashids->_hash( 123, \@alphabet ), 'bcd', 'internal hash' );
-        is( Hashids->_unhash( 'bcd', \@alphabet ), 123, 'internal unhash' );
+        is( Hashids::_hash( 123, \@alphabet ), 'bcd', 'internal hash' );
+        is( Hashids::_unhash( 'bcd', \@alphabet ), 123, 'internal unhash' );
     };
 };
 
@@ -273,25 +274,47 @@ subtest 'test encode/decode series comparison' => sub {
     is_deeply( \@decoded, \@arr, 'known array series' );
 };
 
-TODO: {
-    local $TODO = 'fix 2^53+1 issue';
+subtest 'BigInt and 2^53+1 support' => sub {
 
-    my $hashids = Hashids->new;
+    # bignum keys are strings so that 32-bit perls can read them
     my %bignums = (
-        9_007_199_254_740_992     => 'mNWyy8yjQYE',
-        9_007_199_254_740_993     => 'n6WOO7OkrgY',
-        18_014_398_509_481_984    => '7KpVVxJ6pOy',
-        18_014_398_509_481_985    => '8LMKKyYqMOg',
-        1_152_921_504_606_846_976 => 'YkZM1Vrj77o0'
+        '9_007_199_254_740_992'     => 'mNWyy8yjQYE',
+        '9_007_199_254_740_993'     => 'n6WOO7OkrgY',
+        '18_014_398_509_481_984'    => '7KpVVxJ6pOy',
+        '18_014_398_509_481_985'    => '8LMKKyYqMOg',
+        '1_152_921_504_606_846_976' => 'YkZM1Vrj77o0'
     );
 
-    subtest 'JS vs Perl bignums' => sub {
-        plan tests => scalar( keys %bignums ) * 2;
-        for my $bignum ( keys %bignums ) {
-            is( $hashids->encode($bignum),
-                $bignums{$bignum}, "encode bignum $bignum" );
-            is( $hashids->decode( $bignums{$bignum} ),
-                $bignum, "decode bignum $bignum" );
+    plan tests => scalar( keys %bignums ) * 2 + 1;
+
+    my $hashids = Hashids->new;
+    for my $bignum ( keys %bignums ) {
+        my $bigint = Math::BigInt->new($bignum);
+        is( $hashids->encode( $bigint->bstr ),
+            $bignums{$bignum}, "encode bignum $bignum" );
+        is( $hashids->decode( $bignums{$bignum} ),
+            $bigint, "decode bignum $bignum" );
+    }
+
+    subtest 'BigInt bounds' => sub {
+        my %big6 = (
+            '666_666_666_666'         => 'Lg8j28K8w',
+            '6_666_666_666_666'       => 'L2jqVjD3v',
+            '66_666_666_666_666'      => 'L7q3Gkq5Mw',
+            '666_666_666_666_666'     => 'L982g6zWEQv',
+            '6_666_666_666_666_666'   => 'LA4V2Z0BAQw',
+            '66_666_666_666_666_666'  => 'LglKVmY922Mv',
+            '666_666_666_666_666_666' => 'LVwzmqgWko3w',
+        );
+
+        plan tests => scalar( keys %big6 ) * 2;
+
+        for my $bignum ( keys %big6 ) {
+            my $bigint = Math::BigInt->new($bignum);
+            is( $hashids->encode( $bigint->bstr ),
+                $big6{$bignum}, "encode bignum $bignum" );
+            is( $hashids->decode( $big6{$bignum} ),
+                $bigint, "decode bignum $bignum" );
         }
     };
-}
+};

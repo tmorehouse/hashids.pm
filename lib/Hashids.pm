@@ -5,7 +5,7 @@ our $VERSION = "1.000002";
 use Carp;
 use Moo;
 use POSIX ();
-use Math::BigInt ();
+use Math::BigInt;
 
 has salt => ( is => 'ro', default => '' );
 
@@ -67,7 +67,7 @@ sub BUILD {
         @alphabet = grep { !/$sep/ } @alphabet;
     }
 
-    @seps = $self->_consistentShuffle( \@seps, $self->salt );
+    @seps = _consistentShuffle( \@seps, $self->salt );
 
     if ( !@seps || ( @alphabet / @seps ) > $sepDiv ) {
         my $sepsLength = POSIX::ceil( @alphabet / $sepDiv );
@@ -80,7 +80,7 @@ sub BUILD {
         # }
     }
 
-    @alphabet = $self->_consistentShuffle( \@alphabet, $self->salt );
+    @alphabet = _consistentShuffle( \@alphabet, $self->salt );
     my $guardCount = POSIX::ceil( @alphabet / $guardDiv );
 
     @guards
@@ -99,8 +99,8 @@ sub encode {
     return '' unless @num;
     map { return '' unless /^\d+$/ } @num;
 
-    @num = map {_bignum($_)} @num;
-	
+    @num = map { _bignum($_) } @num;
+
     $self->_encode( \@num );
 }
 
@@ -119,7 +119,7 @@ sub encode_hex {
     push @num, '1' . substr $str, 0, 11, '' while $str;
 
     # no warnings 'portable';
-    @num = map {Math::BigInt->from_hex($_)} @num;
+    @num = map { Math::BigInt->from_hex($_) } @num;
 
     $self->encode(@num);
 }
@@ -129,8 +129,8 @@ sub decode_hex {
 
     my @res = $self->decode($hash);
 
-	# as_hex includes the leading 0x, so we use three instead of 1
-    @res ? join '' => map { substr(_bignum($_)->as_hex(),3) } @res : '';
+    # as_hex includes the leading 0x, so we use three instead of 1
+    @res ? join '' => map { substr( _bignum($_)->as_hex, 3 ) } @res : '';
 }
 
 sub encrypt {
@@ -148,40 +148,44 @@ sub _encode {
     my @res;
 
     my $numHashInt = _bignum(0);
-    for my $i ( 0 .. $#$num ) { 
-      $numHashInt->badd(_bignum($num->[$i])->bmod(_bignum($i + 100)));
+    for my $i ( 0 .. $#$num ) {
+        $numHashInt->badd(
+            _bignum( $num->[$i] )->bmod( _bignum( $i + 100 ) ) );
     }
 
-    my $lottery = $res[0] = $alphabet[ _bignum($numHashInt)->bmod(_bignum(scalar @alphabet))->numify() ];
-	
+    my $lottery = $res[0] = $alphabet[ _bignum($numHashInt)
+        ->bmod( _bignum( scalar @alphabet ) )->numify ];
+
     for my $i ( 0 .. $#$num ) {
-        my $n = _bignum($num->[$i]);
+        my $n = _bignum( $num->[$i] );
         my @s = ( $lottery, split( // => $self->salt ), @alphabet )
             [ 0 .. @alphabet ];
 
-        @alphabet = $self->_consistentShuffle( \@alphabet, \@s );
-        my $last = $self->_hash( $n, \@alphabet );
+        @alphabet = _consistentShuffle( \@alphabet, \@s );
+        my $last = _hash( $n, \@alphabet );
 
         push @res => split // => $last;
 
         if ( $i + 1 < @$num ) {
             my $seps = $self->seps;
-            $n->bmod( _bignum(ord($last) + $i) );
-            my $sepsIndex = _bignum($n)->bmod(_bignum(scalar @$seps));
-            push @res, $seps->[$sepsIndex->numify()];
+            $n->bmod( _bignum( ord($last) + $i ) );
+            my $sepsIndex = _bignum($n)->bmod( _bignum( scalar @$seps ) );
+            push @res, $seps->[ $sepsIndex->numify ];
         }
     }
 
     if ( @res < $self->minHashLength ) {
         my $guards     = $self->guards;
-        my $guardIndex = _bignum($numHashInt)->badd(_bignum(ord $res[0]))->bmod(_bignum(scalar @$guards));
-        my $guard      = $guards->[$guardIndex->numify()];
+        my $guardIndex = _bignum($numHashInt)->badd( _bignum( ord $res[0] ) )
+            ->bmod( _bignum( scalar @$guards ) );
+        my $guard = $guards->[ $guardIndex->numify ];
 
         unshift @res, $guard;
 
         if ( @res < $self->minHashLength ) {
-            $guardIndex = _bignum($numHashInt)->badd(_bignum(ord $res[2]))->bmod(_bignum(scalar @$guards));
-            $guard      = $guards->[$guardIndex->numify()];
+            $guardIndex = _bignum($numHashInt)->badd( _bignum( ord $res[2] ) )
+                ->bmod( _bignum( scalar @$guards ) );
+            $guard = $guards->[ $guardIndex->numify ];
 
             push @res, $guard;
         }
@@ -189,7 +193,7 @@ sub _encode {
 
     my $halfLength = int @alphabet / 2;
     while ( @res < $self->minHashLength ) {
-        @alphabet = $self->_consistentShuffle( \@alphabet, \@alphabet );
+        @alphabet = _consistentShuffle( \@alphabet, \@alphabet );
         @res = (
             @alphabet[ $halfLength .. $#alphabet ],
             @res, @alphabet[ 0 .. $halfLength - 1 ]
@@ -228,8 +232,8 @@ sub _decode {
         my @s = ( $lottery, split( // => $self->salt ), @alphabet )
             [ 0 .. @alphabet ];
 
-        @alphabet = $self->_consistentShuffle( \@alphabet, \@s );
-        push @$res => $self->_unhash( $part, \@alphabet );
+        @alphabet = _consistentShuffle( \@alphabet, \@s );
+        push @$res => _unhash( $part, \@alphabet );
     }
 
     return unless $self->Hashids::encode(@$res) eq $orig;
@@ -238,7 +242,7 @@ sub _decode {
 }
 
 sub _consistentShuffle {
-    my ( $self, $alphabet, $salt ) = @_;
+    my ( $alphabet, $salt ) = @_;
 
     return wantarray ? [''] : '' unless $alphabet;
 
@@ -258,24 +262,29 @@ sub _consistentShuffle {
 }
 
 sub _hash {
-    my ( $self, $num, $alphabet ) = @_;
+    my ( $num, $alphabet ) = @_;
 
     my $hash = '';
-    my @alphabet = ref $alphabet eq 'ARRAY' ? @$alphabet : split // => $alphabet;
+    my @alphabet
+        = ref $alphabet eq 'ARRAY' ? @$alphabet : split // => $alphabet;
 
     $num = _bignum($num);
     do {
-        $hash = $alphabet[ _bignum($num)->bmod(_bignum(scalar @alphabet))->numify() ] . $hash;
-        $num->bdiv(_bignum(scalar @alphabet) );
-    } while ($num->bcmp(_bignum(0)));
+        $hash
+            = $alphabet[ _bignum($num)->bmod( _bignum( scalar @alphabet ) )
+            ->numify ]
+            . $hash;
+        $num->bdiv( _bignum( scalar @alphabet ) );
+    } while ( $num->bcmp( _bignum(0) ) );
 
     $hash;
 }
 
 sub _unhash {
-    my ( $self, $hash, $alphabet ) = @_;
+    my ( $hash, $alphabet ) = @_;
 
-    my @alphabet = ref $alphabet eq 'ARRAY' ? @$alphabet : split // => $alphabet;
+    my @alphabet
+        = ref $alphabet eq 'ARRAY' ? @$alphabet : split // => $alphabet;
 
     my $num = _bignum(0);
     my $pos;
@@ -283,17 +292,20 @@ sub _unhash {
     for my $i ( 0 .. $#hash ) {
         ($pos) = grep { $alphabet[$_] eq $hash[$i] } 0 .. $#alphabet;
         $pos = defined $pos ? $pos : -1;
-        $num->badd(_bignum($pos)->bmul(_bignum(scalar @alphabet)->bpow(@hash-$i-1)));
+        $num->badd( _bignum($pos)
+                ->bmul( _bignum( scalar @alphabet )->bpow( @hash - $i - 1 ) )
+        );
     }
 
-    $num->bstr();
+    $num->bstr;
 }
 
 sub _bignum {
-	my $n = Math::BigInt->bzero();
-	$n->round_mode('zero');
-	return $n->badd(shift);
+    my $n = Math::BigInt->bzero();
+    $n->round_mode('zero');
+    return $n->badd("@{[shift]}");
 }
+
 1;
 __END__
 
@@ -443,5 +455,9 @@ Akimov|http://twitter.com/ivanakimov>
 
 Props to L<Jofell Gallardo|http://twitter.com/jofell> for pointing this
 excellent project to me in the first place.
+
+Many thanks to L<C. A. Church|https://github.com/thisdroneeatspeople>
+and L<Troy Morehouse|https://github.com/tmorehouse> for their fixes and
+updates.
 
 =cut
